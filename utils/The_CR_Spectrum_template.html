@@ -1,0 +1,438 @@
+<!-- Web-based rendering of the CR plot -->
+<!-- This HTML is self-contained, you can serve it directly or open in te browser -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cosmic Ray Spectrum</title>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+    <script
+      src="https://cdn.plot.ly/plotly-2.27.0.min.js"
+      charset="utf-8"
+    ></script>
+  </head>
+  <body onload="updatePlot();">
+    <div id="top-panel">
+      <div id="controls">
+        <input
+          type="range"
+          id="ealpha"
+          min="0"
+          max="4"
+          value="2"
+          step="0.05"
+          oninput="updatePlot()"
+          ondblclick="resetEAlpha()"
+        />
+        <label for="ealpha">E power = <span id="ealpha-current"></span></label>
+      </div>
+      <a href="https://github.com/carmeloevoli/The_CR_Spectrum" target="_blank">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 496 512"
+          style="height: 2em"
+        >
+          <!--!Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2024 Fonticons, Inc.-->
+          <path
+            d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3 .3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5 .3-6.2 2.3zm44.2-1.7c-2.9 .7-4.9 2.6-4.6 4.9 .3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3 .7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3 .3 2.9 2.3 3.9 1.6 1 3.6 .7 4.3-.7 .7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3 .7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3 .7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"
+          />
+        </svg>
+      </a>
+    </div>
+    <div id="cr-plot"></div>
+    <div id="data" hidden>JSON data goes here</div>
+  </body>
+  <style>
+    body {
+      margin: 0;
+    }
+
+    #cr-plot {
+      width: 100%;
+      height: 90vh;
+      margin-bottom: 10px;
+    }
+
+    #top-panel {
+      height: 8vh;
+      margin: 0 1.5em;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    #controls {
+      display: flex;
+      gap: 1em;
+      width: min(70%, 600px);
+    }
+
+    #ealpha {
+      width: 70%;
+    }
+  </style>
+  <script>
+    const EMin = 1e-2;
+    const EMax = 1e12;
+    const IMin = 1e-33;
+    const IMax = 1e4;
+    const currentRanges = {
+      log10E: [Math.log10(EMin), Math.log10(EMax)],
+    };
+
+    function updatePlot() {
+      const alphaSelector = document.getElementById("ealpha");
+      const alpha = parseFloat(alphaSelector.value);
+      document.getElementById("ealpha-current").innerText = formatFloat(alpha);
+      plot(alpha);
+    }
+
+    function loadData() {
+      return JSON.parse(document.getElementById("data").innerText);
+    }
+
+    /**
+     * main plotting func
+     * @param {number} alpha
+     */
+    function plot(alpha) {
+      try {
+        const data = loadData();
+        const plots = [];
+        const particleKindReferencePoints = {};
+        const logEalphaRange = [undefined, undefined];
+
+        function updatePlotLimits(plot, kind) {
+          const maxIdx = argmax(plot.y);
+          const minIdx = argmin(plot.y);
+          if (
+            particleKindReferencePoints[kind] === undefined ||
+            plot.y[maxIdx] > particleKindReferencePoints[kind].y
+          ) {
+            particleKindReferencePoints[kind] = {
+              x: plot.x[maxIdx],
+              y: plot.y[maxIdx],
+            };
+          }
+
+          const logEalphaHi = Math.log10(plot.y[maxIdx]);
+          const logEalphaLo = Math.log10(plot.y[minIdx]);
+          if (
+            isFinite(logEalphaLo) &&
+            (logEalphaRange[0] === undefined || logEalphaRange[0] > logEalphaLo)
+          )
+            logEalphaRange[0] = logEalphaLo;
+          if (
+            isFinite(logEalphaHi) &&
+            (logEalphaRange[1] === undefined || logEalphaRange[1] < logEalphaHi)
+          )
+            logEalphaRange[1] = logEalphaHi;
+        }
+
+        ////////////////////////////////////////////////////////
+
+        for (const scatterPlot of data.scatter_plots) {
+          const Ealpha = pow(scatterPlot.data.E, alpha);
+          const plot = {
+            x: scatterPlot.data.E,
+            y: mult(Ealpha, scatterPlot.data.I),
+            error_y: {
+              type: "data",
+              symmetric: false,
+              thickness: 1,
+              array: mult(
+                Ealpha,
+                sqrt(
+                  sum(
+                    sqr(scatterPlot.data.stat_hi),
+                    sqr(scatterPlot.data.syst_hi)
+                  )
+                )
+              ),
+              arrayminus: mult(
+                Ealpha,
+                sqrt(
+                  sum(
+                    sqr(scatterPlot.data.stat_lo),
+                    sqr(scatterPlot.data.syst_lo)
+                  )
+                )
+              ),
+            },
+            type: "scatter",
+            mode: "markers",
+            name: `${data.labels[scatterPlot.experiment]} ${
+              data.kind_labels[scatterPlot.kind]
+            }`,
+            legendgroup: data.labels[scatterPlot.experiment],
+            legendgrouptitle: { text: data.labels[scatterPlot.experiment] },
+            marker: {
+              color: data.colors[scatterPlot.experiment],
+              symbol: scatterPlot.marker,
+              size: 8,
+            },
+          };
+          updatePlotLimits(plot, scatterPlot.kind);
+          plots.push(plot);
+        }
+
+        for (const diffuseScatterPlot of data.diffuse_scatter_plots) {
+          const Ealpha = pow(diffuseScatterPlot.data.E, alpha);
+          const plot = {
+            x: diffuseScatterPlot.data.E,
+            y: mult(Ealpha, diffuseScatterPlot.data.I),
+            error_y: {
+              type: "data",
+              symmetric: false,
+              thickness: 1,
+              array: mult(Ealpha, diffuseScatterPlot.data.dI_hi),
+              arrayminus: mult(Ealpha, diffuseScatterPlot.data.dI_lo),
+            },
+            error_x: {
+              type: "data",
+              symmetric: false,
+              thickness: 1,
+              array: diffuseScatterPlot.data.dE_hi,
+              arrayminus: diffuseScatterPlot.data.dE_lo,
+            },
+            type: "scatter",
+            mode: "markers",
+            name: `${data.labels[diffuseScatterPlot.experiment]} ${
+              data.kind_labels[diffuseScatterPlot.kind]
+            }`,
+            legendgroup: data.labels[diffuseScatterPlot.experiment],
+            marker: {
+              color: data.colors[diffuseScatterPlot.experiment],
+              symbol: diffuseScatterPlot.marker,
+              size: 8,
+            },
+          };
+          updatePlotLimits(plot, diffuseScatterPlot.kind);
+          plots.push(plot);
+        }
+
+        for (const linePlot of data.line_plots) {
+          const Ealpha = pow(linePlot.data.E, alpha);
+          const plot = {
+            x: linePlot.data.E,
+            y: mult(Ealpha, linePlot.data.I),
+            type: "scatter",
+            mode: "line",
+            name: `${data.labels[linePlot.experiment]} ${
+              data.kind_labels[linePlot.kind]
+            }`,
+            legendgroup: data.labels[linePlot.experiment],
+            marker: { color: data.colors[linePlot.experiment] },
+          };
+          updatePlotLimits(plot, linePlot.kind);
+          plots.push(plot);
+        }
+
+        // plotting particle kind labels
+        plots.push({
+          x: Object.values(particleKindReferencePoints).map(({ x }) => x),
+          y: Object.values(particleKindReferencePoints).map(({ y }) => y),
+          type: "scatter",
+          mode: "markers+text",
+          textposition: "top center",
+          hoverinfo: "none",
+          name: "Particle kind labels",
+          text: Object.keys(particleKindReferencePoints).map(
+            (kind) => data.kind_labels[kind]
+          ),
+          textfont: {
+            size: 16,
+            color: "black",
+          },
+          marker: {
+            color: "grey",
+            symbol: "arrow-down-open",
+            size: 7,
+          },
+        });
+
+        ////////////////////////////////////////////////////////
+        // enlarging view area a little bit
+        logEalphaRange[0] = logEalphaRange[0] - 0.8;
+        logEalphaRange[1] = logEalphaRange[1] + 0.8;
+
+        const log4pi = Math.log(4 * Math.PI);
+        const isoFlux = (E, EdNdE) =>
+          Math.exp(Math.log(E) * (alpha - 1) + Math.log(EdNdE) - log4pi);
+        const isoFluxInverse = (isoFlux, EdNdE) =>
+          Math.exp(
+            (log4pi + Math.log(isoFlux) - Math.log(EdNdE)) / (alpha - 1)
+          );
+
+        const layout = {
+          showlegend: true,
+          legend: {
+            tracegroupgap: 15,
+          },
+          margin: { r: 40, t: 40, b: 60 },
+          xaxis: {
+            title: {
+              font: { size: 20 },
+              text: "$ E \\; \\mathrm{[GeV]} $",
+            },
+            showline: true,
+            type: "log",
+            exponentformat: "power",
+            autorange: false,
+            range: currentRanges.log10E,
+            minallowed: Math.log10(EMin),
+            maxallowed: Math.log10(EMax),
+          },
+          yaxis: {
+            title: {
+              font: { size: 20 },
+              text: `$ E^{${formatFloat(
+                alpha
+              )}} dJ / dE \\; \\mathrm{[GeV^{${formatFloat(
+                alpha - 1
+              )}} \\, m^{-2} \\, s^{-1} \\, sr^{-1} ]} $`,
+            },
+            showline: true,
+            mirror: true,
+            type: "log",
+            exponentformat: "power",
+            autorange: false,
+            range: logEalphaRange,
+            minallowed: logEalphaRange[0],
+            maxallowed: logEalphaRange[1],
+          },
+          shapes: [
+            // isotropic flux region boundaries
+            ...[
+              [1, "1 / m² / sec"],
+              [1 / 3.14e7, "1 / m² / yr"],
+              [1 / 3.14e7 / 1e6, "1 / km² / yr"],
+            ].map(([EdNdE, label]) => {
+              let ELow = EMin;
+              let isoFluxLow = isoFlux(EMin, EdNdE);
+              if (alpha !== 1 && Math.log10(isoFluxLow) < logEalphaRange[0]) {
+                isoFluxLow = 10 ** logEalphaRange[0];
+                ELow = isoFluxInverse(isoFluxLow, EdNdE);
+              }
+              return {
+                type: "line",
+                x0: ELow,
+                y0: isoFluxLow,
+                x1: EMax,
+                y1: isoFlux(EMax, EdNdE),
+                line: {
+                  color: "grey",
+                  width: 0.5,
+                },
+                showlegend: true,
+                legendgroup: "Iso-flux lines",
+                legendgrouptitle: { text: "Iso-flux lines" },
+                name: label,
+                label: {
+                  text: `     ${label}`, // NOTE: hack with spaces to offset it from axis
+                  font: { size: 12, color: "grey" },
+                  textposition: "start",
+                },
+              };
+            }),
+            // vertical lines
+            ...[
+              [2.8e6, "Knee"],
+              [10 ** 17.04 / 1e9, "Second knee"], // ref: arXiv:1803.07052v1
+              [(2 * 13e3 ** 2) / 0.938, "LHC"],
+              [0.7e10, "Ankle"],
+            ].map(([E, label]) => {
+              return {
+                type: "line",
+                x0: E,
+                y0: 0,
+                x1: E,
+                y1: 1,
+                yref: "paper",
+                line: {
+                  color: "grey",
+                  width: 1,
+                  dash: "dot",
+                },
+                label: {
+                  text: label,
+                  font: { size: 10, color: "grey" },
+                  textposition: "end",
+                },
+                showlegend: true,
+                legendgroup: "Characteristic energies",
+                legendgrouptitle: { text: "Characteristic energies" },
+              };
+            }),
+          ],
+        };
+
+        const plotDiv = document.getElementById("cr-plot");
+        Plotly.newPlot(plotDiv, plots, layout);
+        plotDiv.on("plotly_relayout", (eventdata) => {
+          const logELo = eventdata["xaxis.range[0]"];
+          const logEHi = eventdata["xaxis.range[1]"];
+          const logEalphaILo = eventdata["yaxis.range[0]"];
+          const logEalphaIHi = eventdata["yaxis.range[1]"];
+          if (logELo !== undefined && logEHi !== undefined) {
+            currentRanges.log10E = [logELo, logEHi];
+          }
+
+          if (
+            // autoranges from data
+            logELo == undefined &&
+            logEHi == undefined &&
+            logEalphaILo == undefined &&
+            logEalphaIHi == undefined
+          ) {
+            currentRanges.log10E = [Math.log10(EMin), Math.log10(EMax)];
+          }
+        });
+      } catch (e) {
+        console.log(e);
+        document.getElementById(
+          "cr-plot"
+        ).innerText = `Error plotting data: ${e}`;
+      }
+    }
+
+    // helper functions
+
+    /**
+     * element-wise operation on arrays
+     * @param {number[]} arr1
+     * @param {number[]} arr2
+     * @param {number} a
+     * @param {(number, number) => number} fn
+     */
+    function elementwise(arr1, arr2, fn) {
+      if (arr1.length !== arr2.length) {
+        throw "arrays have different lengths";
+      }
+      return arr1.map((el1, i) => fn(el1, arr2[i]));
+    }
+
+    // numpy-like elementwise array manipulation
+    const sum = (arr1, arr2) => elementwise(arr1, arr2, (e1, e2) => e1 + e2);
+    const mult = (arr1, arr2) => elementwise(arr1, arr2, (e1, e2) => e1 * e2);
+    const pow = (arr, b) => arr.map((e) => e ** b);
+    const sqr = (arr) => pow(arr, 2);
+    const sqrt = (arr) => arr.map((e) => Math.sqrt(e));
+
+    // to fixed + stripping traling zeros
+    const formatFloat = (float) => float.toFixed(5).replace(/\.?0+$/, "");
+
+    const argmax = (arr) =>
+      arr.reduce((iMax, x, i, arr) => (x > arr[iMax] ? i : iMax), 0);
+    const argmin = (arr) => argmax(arr.map((el) => -el));
+
+    // other setup and UI action handlers
+    function resetEAlpha() {
+      const alphaSelector = document.getElementById("ealpha");
+      alphaSelector.value = 2.0;
+      updatePlot();
+    }
+  </script>
+</html>
