@@ -242,9 +242,6 @@ if __name__ == "__main__":
             "zorder": 1,
         }
     )
-    # self.plot_data_diffuse(ax, filename, self.cFERMI)
-    # filename = "data/gammas/FERMI_gammas_inner.txt"
-    # self.plot_data_inner(ax, filename, self.cFERMI)
 
     data = {
         "labels": {
