@@ -78,8 +78,10 @@
     const EMax = 1e12;
     const IMin = 1e-33;
     const IMax = 1e4;
-    const currentRanges = {
+    const physicalPlotRange = {
       log10E: [Math.log10(EMin), Math.log10(EMax)],
+      log10Ealpha: [undefined, undefined],
+      alpha: undefined,
     };
 
     function updatePlot() {
@@ -93,6 +95,21 @@
       return JSON.parse(document.getElementById("data").innerText);
     }
 
+    function updateRange(range, update) {
+      if (
+        isFinite(update[0]) &&
+        (range[0] === undefined || range[0] > update[0])
+      ) {
+        range[0] = update[0];
+      }
+      if (
+        isFinite(update[1]) &&
+        (range[1] === undefined || range[1] < update[1])
+      ) {
+        range[1] = update[1];
+      }
+    }
+
     /**
      * main plotting func
      * @param {number} alpha
@@ -102,11 +119,11 @@
         const data = loadData();
         const plots = [];
         const particleKindReferencePoints = {};
-        const logEalphaRange = [undefined, undefined];
+        const plottedLogEalphaIRange = [undefined, undefined];
+        const fullLogEalphaIRange = [undefined, undefined];
 
         function updatePlotLimits(plot, kind) {
           const maxIdx = argmax(plot.y);
-          const minIdx = argmin(plot.y);
           if (
             particleKindReferencePoints[kind] === undefined ||
             plot.y[maxIdx] > particleKindReferencePoints[kind].y
@@ -117,18 +134,58 @@
             };
           }
 
-          const logEalphaHi = Math.log10(plot.y[maxIdx]);
-          const logEalphaLo = Math.log10(plot.y[minIdx]);
-          if (
-            isFinite(logEalphaLo) &&
-            (logEalphaRange[0] === undefined || logEalphaRange[0] > logEalphaLo)
-          )
-            logEalphaRange[0] = logEalphaLo;
-          if (
-            isFinite(logEalphaHi) &&
-            (logEalphaRange[1] === undefined || logEalphaRange[1] < logEalphaHi)
-          )
-            logEalphaRange[1] = logEalphaHi;
+          const logEalphaI = plot.y.map(Math.log10);
+          const fullLogEalphaIRangeUpdate = [
+            Math.min(...logEalphaI),
+            Math.max(...logEalphaI),
+          ];
+          updateRange(fullLogEalphaIRange, fullLogEalphaIRangeUpdate);
+
+          if (physicalPlotRange.alpha !== undefined) {
+            const logEalphaIWithinPhysicalRange = logEalphaI
+              .map((logEalphaI, idx) => {
+                // add log energy
+                return {
+                  logEalphaI: logEalphaI,
+                  logE: Math.log10(plot.x[idx]),
+                };
+              })
+              .filter(
+                // filter by energy
+                ({ logEalphaI, logE }) =>
+                  logE > physicalPlotRange.log10E[0] &&
+                  logE < physicalPlotRange.log10E[1]
+              )
+              .map(({ logEalphaI, logE }) => {
+                // map from current alpha to the "previous" one (used for physical range)
+                return {
+                  logEalphaIPrev:
+                    logEalphaI + (physicalPlotRange.alpha - alpha) * logE,
+                  logE: logE,
+                };
+              })
+              .filter(
+                // filter to points with intensity within physical range (defined in terms of old alpha)
+                ({ logEalphaIPrev, logE }) =>
+                  (physicalPlotRange.log10Ealpha[0] === undefined ||
+                    logEalphaIPrev >= physicalPlotRange.log10Ealpha[0]) &&
+                  (physicalPlotRange.log10Ealpha[1] === undefined ||
+                    logEalphaIPrev <= physicalPlotRange.log10Ealpha[1])
+              )
+              .map(
+                // map back to the actual alpha after filtering
+                ({ logEalphaIPrev, logE }) =>
+                  logEalphaIPrev + (alpha - physicalPlotRange.alpha) * logE
+              );
+            if (logEalphaIWithinPhysicalRange.length !== 0) {
+              updateRange(plottedLogEalphaIRange, [
+                Math.min(...logEalphaIWithinPhysicalRange),
+                Math.max(...logEalphaIWithinPhysicalRange),
+              ]);
+            }
+          } else {
+            updateRange(plottedLogEalphaIRange, fullLogEalphaIRangeUpdate);
+          }
         }
 
         ////////////////////////////////////////////////////////
@@ -255,8 +312,15 @@
 
         ////////////////////////////////////////////////////////
         // enlarging view area a little bit
-        logEalphaRange[0] = logEalphaRange[0] - 0.8;
-        logEalphaRange[1] = logEalphaRange[1] + 0.8;
+        const rangeLen = plottedLogEalphaIRange[1] - plottedLogEalphaIRange[0];
+        plottedLogEalphaIRange[0] = plottedLogEalphaIRange[0] - rangeLen / 12;
+        plottedLogEalphaIRange[1] = plottedLogEalphaIRange[1] + rangeLen / 12;
+        physicalPlotRange.log10Ealpha = plottedLogEalphaIRange;
+        physicalPlotRange.alpha = alpha;
+        // console.log(
+        //   "after plotting, updated",
+        //   JSON.stringify(physicalPlotRange)
+        // );
 
         const log4pi = Math.log(4 * Math.PI);
         const isoFlux = (E, EdNdE) =>
@@ -281,7 +345,7 @@
             type: "log",
             exponentformat: "power",
             autorange: false,
-            range: currentRanges.log10E,
+            range: physicalPlotRange.log10E,
             minallowed: Math.log10(EMin),
             maxallowed: Math.log10(EMax),
           },
@@ -299,9 +363,9 @@
             type: "log",
             exponentformat: "power",
             autorange: false,
-            range: logEalphaRange,
-            minallowed: logEalphaRange[0],
-            maxallowed: logEalphaRange[1],
+            range: plottedLogEalphaIRange,
+            minallowed: fullLogEalphaIRange[0] - 0.8,
+            maxallowed: fullLogEalphaIRange[1] + 0.8,
           },
           shapes: [
             // isotropic flux region boundaries
@@ -312,8 +376,11 @@
             ].map(([EdNdE, label]) => {
               let ELow = EMin;
               let isoFluxLow = isoFlux(EMin, EdNdE);
-              if (alpha !== 1 && Math.log10(isoFluxLow) < logEalphaRange[0]) {
-                isoFluxLow = 10 ** logEalphaRange[0];
+              if (
+                alpha !== 1 &&
+                Math.log10(isoFluxLow) < plottedLogEalphaIRange[0]
+              ) {
+                isoFluxLow = 10 ** plottedLogEalphaIRange[0];
                 ELow = isoFluxInverse(isoFluxLow, EdNdE);
               }
               return {
@@ -371,13 +438,17 @@
 
         const plotDiv = document.getElementById("cr-plot");
         Plotly.newPlot(plotDiv, plots, layout);
-        plotDiv.on("plotly_relayout", (eventdata) => {
-          const logELo = eventdata["xaxis.range[0]"];
-          const logEHi = eventdata["xaxis.range[1]"];
-          const logEalphaILo = eventdata["yaxis.range[0]"];
-          const logEalphaIHi = eventdata["yaxis.range[1]"];
+        plotDiv.on("plotly_relayout", (event) => {
+          // handling change of axes limits to recompute plot (e.g. change in E power) without resetting them
+          const logELo = event["xaxis.range[0]"];
+          const logEHi = event["xaxis.range[1]"];
+          const logEalphaILo = event["yaxis.range[0]"];
+          const logEalphaIHi = event["yaxis.range[1]"];
           if (logELo !== undefined && logEHi !== undefined) {
-            currentRanges.log10E = [logELo, logEHi];
+            physicalPlotRange.log10E = [logELo, logEHi];
+          }
+          if (logEalphaILo !== undefined && logEalphaIHi !== undefined) {
+            physicalPlotRange.log10Ealpha = [logEalphaILo, logEalphaIHi];
           }
 
           if (
@@ -387,8 +458,16 @@
             logEalphaILo == undefined &&
             logEalphaIHi == undefined
           ) {
-            currentRanges.log10E = [Math.log10(EMin), Math.log10(EMax)];
+            physicalPlotRange.log10E = [Math.log10(EMin), Math.log10(EMax)];
           }
+        });
+
+        // TODO: store up-to-date legend
+        plotDiv.on("plotly_legendclick", (event) => {
+          // console.log("click", event);
+        });
+        plotDiv.on("plotly_legenddoubleclick", (event) => {
+          // console.log("dbl click", event);
         });
       } catch (e) {
         console.log(e);
